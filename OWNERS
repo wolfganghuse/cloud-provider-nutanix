@@ -1,0 +1,8 @@
+approvers:
+- Fedosin
+- JoelSpeed
+- elmiko
+- lobziik
+
+component: "Cloud Compute"
+subcomponent: "Cloud Controller Manager"
