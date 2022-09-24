@@ -3,8 +3,10 @@ module github.com/nutanix-cloud-native/cloud-provider-nutanix
 go 1.17
 
 require (
-	github.com/google/uuid v1.1.2
+	github.com/google/uuid v1.3.0
 	github.com/nutanix-cloud-native/prism-go-client v0.2.1-0.20220728162452-e667703bf00c
+	github.com/nutanix-core/ntnx-api-go-sdk-internal/networking_go_sdk/v16 v16.6.0-2869
+	github.com/nutanix-core/ntnx-api-go-sdk-internal/tasks_go_sdk/v16 v16.7.0-372
 	github.com/onsi/ginkgo/v2 v2.1.4
 	github.com/onsi/gomega v1.19.0
 	k8s.io/api v0.24.2
@@ -44,6 +46,8 @@ require (
 	github.com/google/gofuzz v1.1.0 // indirect
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0 // indirect
+	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
+	github.com/hashicorp/go-retryablehttp v0.7.0 // indirect
 	github.com/hashicorp/logutils v1.0.0 // indirect
 	github.com/hashicorp/terraform-plugin-sdk/v2 v2.17.0 // indirect
 	github.com/imdario/mergo v0.3.12 // indirect

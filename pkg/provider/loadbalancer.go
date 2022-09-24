@@ -19,8 +19,8 @@ package provider
 import (
 	"context"
 	"fmt"
+	"github.com/google/uuid"
 
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 
@@ -30,20 +30,18 @@ import (
 )
 
 type loadBalancers struct {
-	k8sclient             kubernetes.Interface
+	nutanixManager *nutanixManager
 }
 
-func newLoadBalancers(k8sclient kubernetes.Interface) (*loadBalancers, error) {
-	
-	l := &loadBalancers{k8sclient}
-
-	klog.Info("loadBalancers.init(): complete")
-	return l, nil
+func newLoadBalancers(nutanixManager *nutanixManager) cloudprovider.LoadBalancer {
+	return &loadBalancers{
+		nutanixManager: nutanixManager,
+	}
 }
 
 func (l *loadBalancers) GetLoadBalancer(ct context.Context, clusterName string, service *v1.Service) (status *v1.LoadBalancerStatus, exists bool, err error) {
 
-	klog.Infof("GetLoadBalancer| clusterName: %s, service: %s, namespace: %s", clusterName, &service.Name, &service.Namespace)
+	klog.Infof("GetLoadBalancer| clusterName: %s, service: %s, namespace: %s", clusterName, service.Name, service.Namespace)
 	if service.Labels["implementation"] == "nutanix-ipam" {
 		return &service.Status.LoadBalancer, true, nil
 	}
@@ -53,7 +51,7 @@ func (l *loadBalancers) GetLoadBalancer(ct context.Context, clusterName string, 
 // GetLoadBalancerName returns the name of the load balancer. Implementations must treat the
 // *v1.Service parameter as read-only and not modify it.
 func (l *loadBalancers) GetLoadBalancerName(ct context.Context, clusterName string, service *v1.Service) string {
-	klog.Infof("GetLoadBalancerName| clusterName: %s, service: %s, namespace: %s", clusterName, &service.Name, &service.Namespace)
+	klog.Infof("GetLoadBalancerName| clusterName: %s, service: %s, namespace: %s", clusterName, service.Name, service.Namespace)
 	return getDefaultLoadBalancerName(service)
 }
 
@@ -73,11 +71,42 @@ func (l *loadBalancers) EnsureLoadBalancer(ct context.Context,
 	if service.Spec.LoadBalancerIP != "" {
 		return &service.Status.LoadBalancer, nil
 	} 
-	
-	loadBalancerIP:= fmt.Sprint("10.38.205.17")
+
+	SubnetLabel:=service.Labels["nutanix-subnet"]
+	if SubnetLabel=="" {
+		klog.Infof("Label nutanix-subnet not set, ignoring SVC")
+		return nil, fmt.Errorf("Label nutanix-subnet not set, ignoring SVC")
+	}
+
+	//ToDo: Wrap complete auth/client Logic
+
+	//ToDo: Get these details from existing ClientImplementation
+
+	var serviceConfig Configuration
+	serviceConfig.Port="9440"
+	serviceConfig.Prism="10.19.227.151"
+	serviceConfig.Insecure="true"
+	serviceConfig.Debug="false"
+	serviceConfig.User="admin"
+	serviceConfig.Password="Nutanix.123"
+
+	nutanixClient,_:=Connect(serviceConfig)
+
+
+	SubnetUUID, err:=findSubnetByName(nutanixClient,SubnetLabel)
+	if err != nil {
+		return nil, err
+	}
+	ClientContext := uuid.NewString()
+	myIP, err:= ReserveIP(nutanixClient,*SubnetUUID.ExtId,ClientContext)
+	if err != nil {
+		return nil, err
+	}
+	loadBalancerIP:=*myIP.Ipv4.Value
 
 	retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		recentService, getErr := l.k8sclient.CoreV1().Services(service.Namespace).Get(ct, service.Name, metav1.GetOptions{})
+		l.nutanixManager.nutanixClient.Get()
+		recentService, getErr := l.nutanixManager.client.CoreV1().Services(service.Namespace).Get(ct, service.Name, metav1.GetOptions{})
 		if getErr != nil {
 			return getErr
 		}
@@ -91,12 +120,13 @@ func (l *loadBalancers) EnsureLoadBalancer(ct context.Context,
 		// Set Label for service lookups
 		recentService.Labels["implementation"] = "nutanix-ipam"
 		recentService.Labels["ipam-address"] = loadBalancerIP
+		recentService.Labels["ip-uuid"] = ClientContext
 
 		// Set IPAM address to Load Balancer Service
 		recentService.Spec.LoadBalancerIP = loadBalancerIP
 
 		// Update the actual service with the address and the labels
-		_, updateErr := l.k8sclient.CoreV1().Services(recentService.Namespace).Update(ct, recentService, metav1.UpdateOptions{})
+		_, updateErr := l.nutanixManager.client.CoreV1().Services(recentService.Namespace).Update(ct, recentService, metav1.UpdateOptions{})
 		return updateErr
 	})
 	if retryErr != nil {
@@ -104,8 +134,6 @@ func (l *loadBalancers) EnsureLoadBalancer(ct context.Context,
 	}
 
 	return &service.Status.LoadBalancer, nil
-
-	return nil, nil
 }
 
 func (l *loadBalancers) UpdateLoadBalancer(ct context.Context,
@@ -121,5 +149,29 @@ func (l *loadBalancers) EnsureLoadBalancerDeleted(ct context.Context, clusterNam
 	service *v1.Service,
 ) error {
 	klog.Info("EnsureLoadBalancerDeleted")
+	ClientContext:=service.Labels["ip-uuid"]
+	klog.Info("Releasing IP with ClientContext: %s", ClientContext)
+
+	var serviceConfig Configuration
+	serviceConfig.Port="9440"
+	serviceConfig.Prism="10.19.227.151"
+	serviceConfig.Insecure="true"
+	serviceConfig.Debug="false"
+	serviceConfig.User="admin"
+	serviceConfig.Password="Nutanix.123"
+
+	nutanixClient,_:=Connect(serviceConfig)
+
+
+	SubnetLabel:=service.Labels["nutanix-subnet"]
+	SubnetUUID, err:=findSubnetByName(nutanixClient,SubnetLabel)
+	if err != nil {
+		return err
+	}
+
+	err = UnreserveIP(nutanixClient,*SubnetUUID.ExtId,ClientContext)
+	if err != nil {
+		return err
+	}
 	return nil
 }

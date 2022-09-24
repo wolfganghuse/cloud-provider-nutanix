@@ -36,7 +36,7 @@ type NtnxCloud struct {
 	client      clientset.Interface
 	config    	config.Config
 	manager     *nutanixManager
-	loadBalancer *loadBalancers
+	loadBalancer cloudprovider.LoadBalancer
 	instancesV2 cloudprovider.InstancesV2
 }
 
@@ -66,7 +66,8 @@ func newNtnxCloud(configReader io.Reader) (cloudprovider.Interface, error) {
 	ntnx := &NtnxCloud{
 		name:        constants.ProviderName,
 		config:      nutanixConfig,
-		manager:     nutanixManager,	 
+		manager:     nutanixManager,
+		loadBalancer: newLoadBalancers(nutanixManager), 
 		instancesV2: newInstancesV2(nutanixManager),
 	}
 
@@ -79,12 +80,7 @@ func (nc *NtnxCloud) Initialize(clientBuilder cloudprovider.ControllerClientBuil
 ) {
 	klog.Info("Initializing client ...")
 	nc.addKubernetesClient(clientBuilder.ClientOrDie("cloud-provider-nutanix"))
-	lb, err := newLoadBalancers(nc.client)
-	if err != nil {
-		klog.Fatalf("could not initialize LoadBalancers: %v", err)
-	}
-
-	nc.loadBalancer = lb
+	
 	klog.Infof("Client initialized")
 }
 
