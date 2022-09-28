@@ -1,6 +1,6 @@
 # Image URL to use all building/pushing image targets
-IMG ?= quay.io/wolfgangntnx/nutanix-cloud-controller-manager:0.3.0
-VERSION = 0.3.0
+IMG ?= quay.io/wolfgangntnx/nutanix-cloud-controller-manager:0.3.1
+VERSION = 0.3.1
 
 build: vendor
 	GOOS=linux GO111MODULE=on CGO_ENABLED=0 go build -ldflags="-w -s -X 'main.version=${VERSION}'" -o=bin/nutanix-cloud-controller-manager main.go

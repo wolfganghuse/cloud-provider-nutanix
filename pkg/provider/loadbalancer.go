@@ -66,7 +66,7 @@ func (l *loadBalancers) EnsureLoadBalancer(ct context.Context,
 ) {
 	klog.Info("EnsureLoadBalancer")
 	klog.Infof("syncing service '%s' (%s)", service.Name, service.UID)
-
+	
 	// The loadBalancer address has already been populated
 	if service.Spec.LoadBalancerIP != "" {
 		return &service.Status.LoadBalancer, nil
@@ -78,27 +78,14 @@ func (l *loadBalancers) EnsureLoadBalancer(ct context.Context,
 		return nil, fmt.Errorf("Label nutanix-subnet not set, ignoring SVC")
 	}
 
-	//ToDo: Wrap complete auth/client Logic
 
-	//ToDo: Get these details from existing ClientImplementation
-
-	var serviceConfig Configuration
-	serviceConfig.Port="9440"
-	serviceConfig.Prism="10.19.227.151"
-	serviceConfig.Insecure="true"
-	serviceConfig.Debug="false"
-	serviceConfig.User="admin"
-	serviceConfig.Password="Nutanix.123"
-
-	nutanixClient,_:=Connect(serviceConfig)
-
-
-	SubnetUUID, err:=findSubnetByName(nutanixClient,SubnetLabel)
+	nc:=l.nutanixManager.nutanixClient.(*nutanixClient)
+	SubnetUUID, err:=findSubnetByName(*nc,SubnetLabel)
 	if err != nil {
 		return nil, err
 	}
 	ClientContext := uuid.NewString()
-	myIP, err:= ReserveIP(nutanixClient,*SubnetUUID.ExtId,ClientContext)
+	myIP, err:= ReserveIP(*nc,*SubnetUUID.ExtId,ClientContext)
 	if err != nil {
 		return nil, err
 	}
@@ -148,28 +135,22 @@ func (l *loadBalancers) UpdateLoadBalancer(ct context.Context,
 func (l *loadBalancers) EnsureLoadBalancerDeleted(ct context.Context, clusterName string,
 	service *v1.Service,
 ) error {
+	nc:=l.nutanixManager.nutanixClient.(*nutanixClient)
+	
 	klog.Info("EnsureLoadBalancerDeleted")
 	ClientContext:=service.Labels["ip-uuid"]
 	klog.Info("Releasing IP with ClientContext: %s", ClientContext)
 
-	var serviceConfig Configuration
-	serviceConfig.Port="9440"
-	serviceConfig.Prism="10.19.227.151"
-	serviceConfig.Insecure="true"
-	serviceConfig.Debug="false"
-	serviceConfig.User="admin"
-	serviceConfig.Password="Nutanix.123"
 
-	nutanixClient,_:=Connect(serviceConfig)
 
 
 	SubnetLabel:=service.Labels["nutanix-subnet"]
-	SubnetUUID, err:=findSubnetByName(nutanixClient,SubnetLabel)
+	SubnetUUID, err:=findSubnetByName(*nc,SubnetLabel)
 	if err != nil {
 		return err
 	}
 
-	err = UnreserveIP(nutanixClient,*SubnetUUID.ExtId,ClientContext)
+	err = UnreserveIP(*nc,*SubnetUUID.ExtId,ClientContext)
 	if err != nil {
 		return err
 	}
