@@ -20,7 +20,7 @@ import (
 	"context"
 	"fmt"
 	"encoding/json"
-	"net/url"
+	"strings"
 	"strconv"
 	"os"
 
@@ -74,6 +74,7 @@ type reservedIP struct {
     IP []string      `json:"reserved_ips"`
 }
 
+
 func (n *nutanixClient) Get() (interfaces.Prism, error) {
 	if err := n.setupEnvironment(); err != nil {
 		return nil, fmt.Errorf("%s: %v", errEnvironmentNotReady, err)
@@ -105,54 +106,6 @@ func (n *nutanixClient) Get() (interfaces.Prism, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	parsedURL, err := url.Parse(me.Address.Host)
-	if err != nil {
-		return nil, err
-	}
-
-	Port, err:= strconv.Atoi(parsedURL.Port())
-	if err != nil {
-		return nil ,err
-	} 
-	Host:= parsedURL.Hostname()
-
-	APIClientInstance := networkingclientv4.NewApiClient()
-	APIClientInstance.Host = Host // IPv4/IPv6 address or FQDN of the cluster
-	
-	APIClientInstance.Port = Port // Port to which to connect to
-	APIClientInstance.Username = me.ApiCredentials.Username // UserName to connect to the cluster
-	APIClientInstance.Password = me.ApiCredentials.Password // Password to connect to the cluster
-	
-	//if me.Debug == "true" {
-	APIClientInstance.Debug = true
-	//}
-
-	//if c.Insecure=="true" {
-	APIClientInstance.SetVerifySSL(false)
-	//} else {
-	//	APIClientInstance.SetVerifySSL(true)
-	//}
-
-	PrismAPIClientInstance := prismclientv4.NewApiClient()
-	PrismAPIClientInstance.Host = Host // IPv4/IPv6 address or FQDN of the cluster
-	PrismAPIClientInstance.Port = Port // Port to which to connect to
-	PrismAPIClientInstance.Username = me.ApiCredentials.Username // UserName to connect to the cluster
-	PrismAPIClientInstance.Password = me.ApiCredentials.Password // Password to connect to the cluster
-
-	//if c.Debug == "true" {
-	PrismAPIClientInstance.Debug = true
-	//}
-
-	//if c.Insecure=="true" {
-	PrismAPIClientInstance.SetVerifySSL(false)
-	//} else {
-	//	PrismAPIClientInstance.SetVerifySSL(true)
-	//}
-
-	n.v4config.SubnetReserveUnreserveIPAPIClient = apiv4.NewSubnetReserveUnreserveIpApi(APIClientInstance)
-	n.v4config.SubnetIPAPIClient = apiv4.NewSubnetApi(APIClientInstance)
-	n.v4config.TasksAPIClient = *prismapiv4.NewTaskApi(PrismAPIClientInstance)
 
 	return nutanixClient.V3, nil
 }
@@ -278,11 +231,74 @@ func UnreserveIP(n nutanixClient, SubnetUUID string, ClientContext string) (erro
 	return nil
 }
 
+
+func connectv4(n nutanixClient, name string) (*nutanixClient, error) {
+	klog.Infof("connect function: %s", name)
+	if err := n.setupEnvironment(); err != nil {
+		return nil, fmt.Errorf("%s: %v", errEnvironmentNotReady, err)
+	}
+	env := *n.env
+	me, err := env.GetManagementEndpoint(envTypes.Topology{})
+	if err != nil {
+		return nil, err
+	}
+	klog.Infof("me: %s", me)
+	klog.Infof("me.Address.Host: %s", me.Address.Host)
+	urlparts := strings.Split(me.Address.Host, ":")
+
+	klog.Info("Connecting V4...3")
+	Port, err:= strconv.Atoi(urlparts[1])
+	if err != nil {
+		return nil, err
+	} 
+	Host:= urlparts[0]
+	klog.Infof("Host: %s", Host)
+	APIClientInstance := networkingclientv4.NewApiClient()
+	APIClientInstance.Host = Host // IPv4/IPv6 address or FQDN of the cluster
+	
+	APIClientInstance.Port = Port // Port to which to connect to
+	APIClientInstance.Username = me.ApiCredentials.Username // UserName to connect to the cluster
+	APIClientInstance.Password = me.ApiCredentials.Password // Password to connect to the cluster
+	
+	//if me.Debug == "true" {
+	APIClientInstance.Debug = true
+	//}
+
+	//if c.Insecure=="true" {
+	APIClientInstance.SetVerifySSL(false)
+	//} else {
+	//	APIClientInstance.SetVerifySSL(true)
+	//}
+
+	PrismAPIClientInstance := prismclientv4.NewApiClient()
+	PrismAPIClientInstance.Host = Host // IPv4/IPv6 address or FQDN of the cluster
+	PrismAPIClientInstance.Port = Port // Port to which to connect to
+	PrismAPIClientInstance.Username = me.ApiCredentials.Username // UserName to connect to the cluster
+	PrismAPIClientInstance.Password = me.ApiCredentials.Password // Password to connect to the cluster
+
+	//if c.Debug == "true" {
+	PrismAPIClientInstance.Debug = true
+	//}
+
+	//if c.Insecure=="true" {
+	PrismAPIClientInstance.SetVerifySSL(false)
+	//} else {
+	//	PrismAPIClientInstance.SetVerifySSL(true)
+	//}
+
+	n.v4config.SubnetReserveUnreserveIPAPIClient = apiv4.NewSubnetReserveUnreserveIpApi(APIClientInstance)
+	n.v4config.SubnetIPAPIClient = apiv4.NewSubnetApi(APIClientInstance)
+	n.v4config.TasksAPIClient = *prismapiv4.NewTaskApi(PrismAPIClientInstance)
+
+	return &n, nil
+}
+
 //findSubnetByName returns Subnet UUID, needs name
 func findSubnetByName(n nutanixClient, name string) (*networkingconfigv4.Subnet, error) {
 	page := 0
 	limit := 20
 	filter := fmt.Sprintf("name eq '%[1]v'", name)
+	klog.Infof("debug: %s",n.v4config.SubnetIPAPIClient)
 	response, err := n.v4config.SubnetIPAPIClient.ListSubnets(
 		&page, &limit, &filter, nil)
 	if err != nil {

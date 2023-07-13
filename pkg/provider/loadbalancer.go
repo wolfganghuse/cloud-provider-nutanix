@@ -78,14 +78,21 @@ func (l *loadBalancers) EnsureLoadBalancer(ct context.Context,
 		return nil, fmt.Errorf("Label nutanix-subnet not set, ignoring SVC")
 	}
 
+	l.nutanixManager.nutanixClient.Get()
 
-	nc:=l.nutanixManager.nutanixClient.(*nutanixClient)
-	SubnetUUID, err:=findSubnetByName(*nc,SubnetLabel)
+	nc2, err:= connectv4(*l.nutanixManager.nutanixClient.(*nutanixClient),"lalala")
+
+
+	klog.Infof("pre l.nutanixManager.nutanixClient: %s", l.nutanixManager.nutanixClient)
+	klog.Infof("pre nc2: %s", nc2)
+
+	//nc:=l.nutanixManager.nutanixClient.(*nutanixClient)
+	SubnetUUID, err:=findSubnetByName(*nc2,SubnetLabel)
 	if err != nil {
 		return nil, err
 	}
 	ClientContext := uuid.NewString()
-	myIP, err:= ReserveIP(*nc,*SubnetUUID.ExtId,ClientContext)
+	myIP, err:= ReserveIP(*nc2,*SubnetUUID.ExtId,ClientContext)
 	if err != nil {
 		return nil, err
 	}
