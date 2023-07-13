@@ -80,19 +80,14 @@ func (l *loadBalancers) EnsureLoadBalancer(ct context.Context,
 
 	l.nutanixManager.nutanixClient.Get()
 
-	nc2, err:= connectv4(*l.nutanixManager.nutanixClient.(*nutanixClient),"lalala")
+	nc, err:= connectv4(*l.nutanixManager.nutanixClient.(*nutanixClient))
 
-
-	klog.Infof("pre l.nutanixManager.nutanixClient: %s", l.nutanixManager.nutanixClient)
-	klog.Infof("pre nc2: %s", nc2)
-
-	//nc:=l.nutanixManager.nutanixClient.(*nutanixClient)
-	SubnetUUID, err:=findSubnetByName(*nc2,SubnetLabel)
+	SubnetUUID, err:=findSubnetByName(*nc,SubnetLabel)
 	if err != nil {
 		return nil, err
 	}
 	ClientContext := uuid.NewString()
-	myIP, err:= ReserveIP(*nc2,*SubnetUUID.ExtId,ClientContext)
+	myIP, err:= ReserveIP(*nc,*SubnetUUID.ExtId,ClientContext)
 	if err != nil {
 		return nil, err
 	}
@@ -142,14 +137,11 @@ func (l *loadBalancers) UpdateLoadBalancer(ct context.Context,
 func (l *loadBalancers) EnsureLoadBalancerDeleted(ct context.Context, clusterName string,
 	service *v1.Service,
 ) error {
-	nc:=l.nutanixManager.nutanixClient.(*nutanixClient)
-	
+	nc, err:= connectv4(*l.nutanixManager.nutanixClient.(*nutanixClient))
+
 	klog.Info("EnsureLoadBalancerDeleted")
 	ClientContext:=service.Labels["ip-uuid"]
 	klog.Info("Releasing IP with ClientContext: %s", ClientContext)
-
-
-
 
 	SubnetLabel:=service.Labels["nutanix-subnet"]
 	SubnetUUID, err:=findSubnetByName(*nc,SubnetLabel)

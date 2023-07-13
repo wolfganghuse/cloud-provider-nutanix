@@ -232,8 +232,7 @@ func UnreserveIP(n nutanixClient, SubnetUUID string, ClientContext string) (erro
 }
 
 
-func connectv4(n nutanixClient, name string) (*nutanixClient, error) {
-	klog.Infof("connect function: %s", name)
+func connectv4(n nutanixClient) (*nutanixClient, error) {
 	if err := n.setupEnvironment(); err != nil {
 		return nil, fmt.Errorf("%s: %v", errEnvironmentNotReady, err)
 	}
@@ -242,17 +241,15 @@ func connectv4(n nutanixClient, name string) (*nutanixClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	klog.Infof("me: %s", me)
-	klog.Infof("me.Address.Host: %s", me.Address.Host)
-	urlparts := strings.Split(me.Address.Host, ":")
 
-	klog.Info("Connecting V4...3")
+	// we need to split the configured host into hostname and port
+	urlparts := strings.Split(me.Address.Host, ":")
 	Port, err:= strconv.Atoi(urlparts[1])
 	if err != nil {
 		return nil, err
 	} 
 	Host:= urlparts[0]
-	klog.Infof("Host: %s", Host)
+	
 	APIClientInstance := networkingclientv4.NewApiClient()
 	APIClientInstance.Host = Host // IPv4/IPv6 address or FQDN of the cluster
 	
@@ -260,10 +257,12 @@ func connectv4(n nutanixClient, name string) (*nutanixClient, error) {
 	APIClientInstance.Username = me.ApiCredentials.Username // UserName to connect to the cluster
 	APIClientInstance.Password = me.ApiCredentials.Password // Password to connect to the cluster
 	
+	// not sure if there is a switch for Debug
 	//if me.Debug == "true" {
-	APIClientInstance.Debug = true
+	APIClientInstance.Debug = false
 	//}
 
+	//same for Insecure
 	//if c.Insecure=="true" {
 	APIClientInstance.SetVerifySSL(false)
 	//} else {
@@ -277,7 +276,7 @@ func connectv4(n nutanixClient, name string) (*nutanixClient, error) {
 	PrismAPIClientInstance.Password = me.ApiCredentials.Password // Password to connect to the cluster
 
 	//if c.Debug == "true" {
-	PrismAPIClientInstance.Debug = true
+	PrismAPIClientInstance.Debug = false
 	//}
 
 	//if c.Insecure=="true" {
@@ -298,7 +297,6 @@ func findSubnetByName(n nutanixClient, name string) (*networkingconfigv4.Subnet,
 	page := 0
 	limit := 20
 	filter := fmt.Sprintf("name eq '%[1]v'", name)
-	klog.Infof("debug: %s",n.v4config.SubnetIPAPIClient)
 	response, err := n.v4config.SubnetIPAPIClient.ListSubnets(
 		&page, &limit, &filter, nil)
 	if err != nil {
