@@ -21,8 +21,11 @@ import (
 	"fmt"
 	"encoding/json"
 	
+	"os"
+
 	prismgoclient "github.com/nutanix-cloud-native/prism-go-client"
 	"github.com/nutanix-cloud-native/prism-go-client/environment"
+	credentialTypes "github.com/nutanix-cloud-native/prism-go-client/environment/credentials"
 	kubernetesEnv "github.com/nutanix-cloud-native/prism-go-client/environment/providers/kubernetes"
 	envTypes "github.com/nutanix-cloud-native/prism-go-client/environment/types"
 	prismClientV3 "github.com/nutanix-cloud-native/prism-go-client/v3"
@@ -48,7 +51,7 @@ import (
 
 )
 
-const errEnvironmentNotReady = "Environment not initialized or ready yet"
+const errEnvironmentNotReady = "environment not initialized or ready yet"
 
 type v4config struct {
 	SubnetReserveUnreserveIPAPIClient *networkingapi.SubnetReserveUnreserveIpApi
@@ -60,6 +63,7 @@ type nutanixClient struct {
 	config          config.Config
 	secretInformer  coreinformers.SecretInformer
 	sharedInformers informers.SharedInformerFactory
+  configMapInformer coreinformers.ConfigMapInformer
 	v4config		v4config
 }
 
@@ -68,10 +72,11 @@ type reservedIP struct {
 }
 
 func (n *nutanixClient) Get() (interfaces.Prism, error) {
-	if n.env == nil {
-		return nil, fmt.Errorf(errEnvironmentNotReady)
+	if err := n.setupEnvironment(); err != nil {
+		return nil, fmt.Errorf("%s: %v", errEnvironmentNotReady, err)
 	}
-	me, err := n.env.GetManagementEndpoint(envTypes.Topology{})
+	env := *n.env
+	me, err := env.GetManagementEndpoint(envTypes.Topology{})
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +87,13 @@ func (n *nutanixClient) Get() (interfaces.Prism, error) {
 		Username: me.ApiCredentials.Username,
 		Password: me.ApiCredentials.Password,
 	}
-	nutanixClient, err := prismClientV3.NewV3Client(*creds)
+
+	clientOpts := make([]prismClientV3.ClientOption, 0)
+	if me.AdditionalTrustBundle != "" {
+		clientOpts = append(clientOpts, prismClientV3.WithPEMEncodedCertBundle([]byte(me.AdditionalTrustBundle)))
+	}
+
+	nutanixClient, err := prismClientV3.NewV3Client(*creds, clientOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -122,41 +133,58 @@ func (n *nutanixClient) Get() (interfaces.Prism, error) {
 	return nutanixClient.V3, nil
 }
 
-func (n *nutanixClient) setupEnvironment() {
-	pc := n.config.PrismCentral
-	prismEndpoint := kubernetesEnv.NutanixPrismEndpoint{
-		Address:  pc.Address,
-		Port:     pc.Port,
-		Insecure: pc.Insecure,
-		CredentialRef: &kubernetesEnv.NutanixCredentialReference{
-			Kind: kubernetesEnv.SecretKind,
-			Namespace: func() string {
-				if pc.CredentialRef.Namespace != "" {
-					return pc.CredentialRef.Namespace
-				}
-				return constants.DefaultCCMSecretNamespace
-			}(),
-			Name: pc.CredentialRef.Name,
-		},
+func (n *nutanixClient) setupEnvironment() error {
+	if n.env != nil {
+		return nil
 	}
-	n.env = environment.NewEnvironment(kubernetesEnv.NewProvider(prismEndpoint,
-		n.secretInformer))
+	ccmNamespace, err := n.getCCMNamespace()
+	if err != nil {
+		return err
+	}
+	pc := n.config.PrismCentral
+	if pc.CredentialRef != nil {
+		if pc.CredentialRef.Namespace == "" {
+			pc.CredentialRef.Namespace = ccmNamespace
+		}
+	}
+	additionalTrustBundleRef := pc.AdditionalTrustBundle
+	if additionalTrustBundleRef != nil &&
+		additionalTrustBundleRef.Kind == credentialTypes.NutanixTrustBundleKindConfigMap &&
+		additionalTrustBundleRef.Namespace == "" {
+		additionalTrustBundleRef.Namespace = ccmNamespace
+	}
+
+	env := environment.NewEnvironment(kubernetesEnv.NewProvider(pc,
+		n.secretInformer, n.configMapInformer))
+	n.env = &env
+	return nil
 }
 
 func (n *nutanixClient) SetInformers(sharedInformers informers.SharedInformerFactory) {
 	n.sharedInformers = sharedInformers
 	n.secretInformer = n.sharedInformers.Core().V1().Secrets()
-	hasSynced := n.secretInformer.Informer().HasSynced
+	n.configMapInformer = n.sharedInformers.Core().V1().ConfigMaps()
+	n.syncCache(n.secretInformer.Informer())
+	n.syncCache(n.configMapInformer.Informer())
+}
+
+func (n *nutanixClient) syncCache(informer cache.SharedInformer) {
+	hasSynced := informer.HasSynced
 	if !hasSynced() {
 		stopCh := context.Background().Done()
-		go n.secretInformer.Informer().Run(stopCh)
-		klog.Info("Waiting for secrets cache to sync")
+		go informer.Run(stopCh)
 		if ok := cache.WaitForCacheSync(stopCh, hasSynced); !ok {
 			klog.Fatal("failed to wait for caches to sync")
 		}
-		klog.Info("Secrets cache synced")
 	}
-	n.setupEnvironment()
+}
+
+func (n *nutanixClient) getCCMNamespace() (string, error) {
+	ns := os.Getenv(constants.CCMNamespaceKey)
+	if ns == "" {
+		return "", fmt.Errorf("failed to retrieve CCM namespace. Make sure %s env variable is set", constants.CCMNamespaceKey)
+	}
+	return ns, nil
 }
 
 
