@@ -13,6 +13,18 @@ metadata:
   name: system:cloud-controller-manager
 rules:
   - apiGroups:
+    - ""
+    resources:
+    - services
+    verbs:
+    - '*'
+  - apiGroups:
+    - ""
+    resources:
+    - services/status
+    verbs:
+    - patch
+  - apiGroups:
       - ""
     resources:
       - secrets

@@ -1,5 +1,5 @@
 # Image URL to use all building/pushing image targets
-IMG ?= quay.io/wolfgangntnx/nutanix-cloud-controller-manager:0.3.3
+IMG ?= quay.io/wolfgangntnx/nutanix-cloud-controller-manager:latest
 VERSION = 0.3.3
 REPO_ROOT := $(shell git rev-parse --show-toplevel)
 ARTIFACTS ?= ${REPO_ROOT}/_artifacts
@@ -7,21 +7,12 @@ PLATFORMS ?= linux/amd64
 IMG_TAG ?= latest
 
 build: vendor
-	GOOS=linux GO111MODULE=on CGO_ENABLED=0 go build -ldflags="-w -s -X 'main.version=${VERSION}'" -o=bin/nutanix-cloud-controller-manager main.go
+	GO111MODULE=on CGO_ENABLED=0 go build -ldflags="-w -s -X 'main.version=${VERSION}'" -o=bin/nutanix-cloud-controller-manager main.go
 
 vendor:
 	go mod tidy
 	go mod vendor
 	go mod verify
-
-docker-image:
-	docker build -t ${IMG} -f ./Dockerfile .
-
-image:
-	docker build -t ${IMG} -f ./Dockerfile2 .
-
-docker-push:
-	docker push ${IMG}
 
 ## --------------------------------------
 ## Unit tests
@@ -30,7 +21,7 @@ docker-push:
 .PHONY: unit-test
 unit-test:
 	go test --cover -v ./... -coverprofile cover.out
-	
+
 .PHONY: unit-test-html
 unit-test-html: unit-test
 	go tool cover -html=cover.out
