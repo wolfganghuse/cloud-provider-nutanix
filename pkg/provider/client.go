@@ -38,32 +38,34 @@ import (
 	"github.com/nutanix-cloud-native/cloud-provider-nutanix/pkg/provider/config"
 	"github.com/nutanix-cloud-native/cloud-provider-nutanix/pkg/provider/interfaces"
 
-	b64 "encoding/base64"
+//	b64 "encoding/base64"
 
-	networkingapi "github.com/nutanix-core/ntnx-api-go-sdk-internal/networking_go_sdk/v16/api"
-	networkingconfig "github.com/nutanix-core/ntnx-api-go-sdk-internal/networking_go_sdk/v16/models/networking/v4/config"
-	prism "github.com/nutanix-core/ntnx-api-go-sdk-internal/networking_go_sdk/v16/models/prism/v4/config"
-	tasksapi "github.com/nutanix-core/ntnx-api-go-sdk-internal/tasks_go_sdk/v16/api"
-	tasksprism "github.com/nutanix-core/ntnx-api-go-sdk-internal/tasks_go_sdk/v16/models/prism/v4/config"
-	//"k8s.io/klog/v2"
-
-	common "github.com/nutanix-core/ntnx-api-go-sdk-internal/networking_go_sdk/v16/models/common/v1/config"
-
+// adding public v4api
+	"github.com/nutanix/ntnx-api-golang-clients/networking-go-client/v4/api"
+	networkingclientv4 "github.com/nutanix/ntnx-api-golang-clients/networking-go-client/v4/client"
+	prismclientv4 "github.com/nutanix/ntnx-api-golang-clients/prism-go-client/v4/client"
+	
+	commonv4 "github.com/nutanix/ntnx-api-golang-clients/networking-go-client/v4/models/common/v1/config"
+	networkingconfigv4 "github.com/nutanix/ntnx-api-golang-clients/networking-go-client/v4/models/networking/v4/config"
+	prismv4 "github.com/nutanix/ntnx-api-golang-clients/networking-go-client/v4/models/prism/v4/config"
+	prismapiv4 "github.com/nutanix/ntnx-api-golang-clients/prism-go-client/v4/api"
+	prismconfigv4 "github.com/nutanix/ntnx-api-golang-clients/prism-go-client/v4/models/prism/v4/config"
 )
 
 const errEnvironmentNotReady = "environment not initialized or ready yet"
 
 type v4config struct {
-	SubnetReserveUnreserveIPAPIClient *networkingapi.SubnetReserveUnreserveIpApi
-	TasksAPIClient *tasksapi.TaskApi
-	SubnetIPAPIClient *networkingapi.SubnetApi
+	SubnetReserveUnreserveIPAPIClient *api.SubnetReserveUnreserveIpApi
+	TasksAPIClient prismapiv4.TaskApi
+	SubnetIPAPIClient *api.SubnetApi
 }
+
 type nutanixClient struct {
 	env             envTypes.Environment
 	config          config.Config
 	secretInformer  coreinformers.SecretInformer
 	sharedInformers informers.SharedInformerFactory
-  configMapInformer coreinformers.ConfigMapInformer
+  	configMapInformer coreinformers.ConfigMapInformer
 	v4config		v4config
 }
 
@@ -102,6 +104,46 @@ func (n *nutanixClient) Get() (interfaces.Prism, error) {
 	if err != nil {
 		return nil, err
 	}
+
+
+	APIClientInstance := networkingclientv4.NewApiClient()
+	APIClientInstance.Host = me.Address.Host // IPv4/IPv6 address or FQDN of the cluster
+
+	APIClientInstance.Port = me.Address.Port // Port to which to connect to
+	APIClientInstance.Username = me.ApiCredentials.Username // UserName to connect to the cluster
+	APIClientInstance.Password = me.ApiCredentials.Password // Password to connect to the cluster
+	
+	//if me.Debug == "true" {
+	APIClientInstance.Debug = true
+	//}
+
+	//if c.Insecure=="true" {
+	APIClientInstance.SetVerifySSL(false)
+	//} else {
+	//	APIClientInstance.SetVerifySSL(true)
+	//}
+
+	PrismAPIClientInstance := prismclientv4.NewApiClient()
+	PrismAPIClientInstance.Host = me.Address.Host // IPv4/IPv6 address or FQDN of the cluster
+	PrismAPIClientInstance.Port = me.Address.Port // Port to which to connect to
+	PrismAPIClientInstance.Username = me.ApiCredentials.Username // UserName to connect to the cluster
+	PrismAPIClientInstance.Password = me.ApiCredentials.Password // Password to connect to the cluster
+
+	//if c.Debug == "true" {
+	PrismAPIClientInstance.Debug = true
+	//}
+
+	//if c.Insecure=="true" {
+	PrismAPIClientInstance.SetVerifySSL(false)
+	//} else {
+	//	PrismAPIClientInstance.SetVerifySSL(true)
+	//}
+
+	n.v4config.SubnetReserveUnreserveIPAPIClient = api.NewSubnetReserveUnreserveIpApi(APIClientInstance)
+	n.v4config.SubnetIPAPIClient = api.NewSubnetApi(APIClientInstance)
+	n.v4config.TasksAPIClient = *prismapiv4.NewTaskApi(PrismAPIClientInstance)
+
+/*
 	n.v4config.SubnetReserveUnreserveIPAPIClient = networkingapi.NewSubnetReserveUnreserveIpApi()
 	n.v4config.SubnetReserveUnreserveIPAPIClient.ApiClient.BasePath = "https://" + me.Address.Host
 	n.v4config.SubnetReserveUnreserveIPAPIClient.ApiClient.SetVerifySSL(false)
@@ -129,6 +171,7 @@ func (n *nutanixClient) Get() (interfaces.Prism, error) {
 		"Authorization": fmt.Sprintf("Basic %s",
 			b64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", me.ApiCredentials.Username, me.ApiCredentials.Password)))),
 	}
+*/
 
 	return nutanixClient.V3, nil
 }
@@ -189,8 +232,46 @@ func (n *nutanixClient) getCCMNamespace() (string, error) {
 
 
 // ReserveIP returns single IP, needs Subnet UUID and ClientContext
-func ReserveIP(n nutanixClient, SubnetUUID string, ClientContext string) (*common.IPAddress, error) {
+func ReserveIP(n nutanixClient, SubnetUUID string, ClientContext string) (*commonv4.IPAddress, error) {
 	var ClientCount int64 = 1
+	ReservedIP:=commonv4.NewIPAddress()
+	
+	ipReserveInput:=*networkingconfigv4.NewIpReserveInput()
+	ipReserveInput.ClientContext = &ClientContext
+	ipReserveInput.Count = &ClientCount
+	ipReserveInput.ReserveType = networkingconfigv4.RESERVETYPE_IP_ADDRESS_COUNT.Ref()
+
+	response, err := n.v4config.SubnetReserveUnreserveIPAPIClient.ReserveIps(&ipReserveInput, &SubnetUUID)   
+	if err != nil {
+		klog.Errorf("error while SubnetReserveUnreserveIpApiClient.ReserveIps | ipReserveInput: %s, Subnet_UUID: %s| error: %s", ipReserveInput, SubnetUUID,err.Error())
+		return nil , err
+	} 
+
+	data := response.GetData().(prismv4.TaskReference)
+	responsetask, err:= n.v4config.TasksAPIClient.TaskGet(data.ExtId)
+	if err != nil {
+		klog.Errorf("error while TasksApiClient.TaskGet | error: %s", err.Error())
+		return nil , err
+	}
+
+	status, err := responsetask.GetData().(prismconfigv4.Task).Status.MarshalJSON()
+	if string(status) == "\"FAILED\"" {
+		return nil, fmt.Errorf(*responsetask.Data.GetValue().(prismconfigv4.Task).LegacyErrorMessage)
+	}
+
+	ReservedIPv4:=commonv4.NewIPv4Address()
+	ipResponse:=reservedIP{}
+	output := responsetask.GetData().(prismconfigv4.Task)
+	
+	for _ ,details:= range output.CompletionDetails {
+		s:=details.Value.GetValue().(string)
+		json.Unmarshal([]byte(s), &ipResponse)
+		ReservedIPv4.Value=&ipResponse.IP[0]
+	}
+	ReservedIP.Ipv4=ReservedIPv4
+
+	return ReservedIP,nil
+	/*	var ClientCount int64 = 1
 	ipReserveInput:=networkingconfig.NewIpReserveInput()
 	ipReserveInput.ClientContext = &ClientContext
 	ipReserveInput.Count = &ClientCount
@@ -219,11 +300,33 @@ func ReserveIP(n nutanixClient, SubnetUUID string, ClientContext string) (*commo
 	ReservedIP:=common.NewIPAddress()
 	ReservedIP.Ipv4=ReservedIPv4
 	return ReservedIP,nil
+*/
 }
 
 // UnreserveIP returns Err of nil if release was successful, needs Subnet UUID and ClientContext
 func UnreserveIP(n nutanixClient, SubnetUUID string, ClientContext string) (error) {
-	IPUnreserveInput:=networkingconfig.NewIpUnreserveInput()
+	IPUnreserveInput:=networkingconfigv4.NewIpUnreserveInput()
+
+	IPUnreserveInput.UnreserveType= networkingconfigv4.UNRESERVETYPE_CONTEXT.Ref()
+	IPUnreserveInput.ClientContext=&ClientContext
+
+	response, err := n.v4config.SubnetReserveUnreserveIPAPIClient.UnreserveIps(IPUnreserveInput,&SubnetUUID)
+	if err != nil {
+		return err
+	}
+	data := response.GetData().(prismv4.TaskReference)
+	resp, err := n.v4config.TasksAPIClient.TaskGet(data.ExtId)
+	status, err := resp.GetData().(prismconfigv4.Task).Status.MarshalJSON()
+	if string(status) == "\"FAILED\"" {
+		return fmt.Errorf(*resp.Data.GetValue().(prismconfigv4.Task).LegacyErrorMessage)
+	}
+
+	if err != nil {
+		return err
+	}
+	return nil
+
+	/*	IPUnreserveInput:=networkingconfig.NewIpUnreserveInput()
 	IPUnreserveInput.UnreserveType= networkingconfig.UNRESERVETYPE_CONTEXT.Ref()
 	IPUnreserveInput.ClientContext=&ClientContext
 	response, err := n.v4config.SubnetReserveUnreserveIPAPIClient.UnreserveIps(IPUnreserveInput,SubnetUUID)
@@ -237,10 +340,11 @@ func UnreserveIP(n nutanixClient, SubnetUUID string, ClientContext string) (erro
 		return err
 	}
 	return nil
+*/	
 }
 
 //findSubnetByName returns Subnet UUID, needs name
-func findSubnetByName(n nutanixClient, name string) (*networkingconfig.Subnet, error) {
+func findSubnetByName(n nutanixClient, name string) (*networkingconfigv4.Subnet, error) {
 	page := 0
 	limit := 20
 	filter := fmt.Sprintf("name eq '%[1]v'", name)
@@ -261,8 +365,8 @@ func findSubnetByName(n nutanixClient, name string) (*networkingconfig.Subnet, e
 	if response.GetData() == nil {
 		return nil, fmt.Errorf("subnet query call failed")
 	}
-	found:=networkingconfig.NewSubnet()
-	for _, data := range response.GetData().([]networkingconfig.Subnet) {
+	found:=networkingconfigv4.NewSubnet()
+	for _, data := range response.GetData().([]networkingconfigv4.Subnet) {
 		found=&data
 	}
 	return found, nil

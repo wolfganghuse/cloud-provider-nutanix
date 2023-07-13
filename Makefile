@@ -1,6 +1,6 @@
 # Image URL to use all building/pushing image targets
-IMG ?= quay.io/wolfgangntnx/nutanix-cloud-controller-manager:0.3.1
-VERSION = 0.3.1
+IMG ?= quay.io/wolfgangntnx/nutanix-cloud-controller-manager:0.3.3
+VERSION = 0.3.3
 REPO_ROOT := $(shell git rev-parse --show-toplevel)
 ARTIFACTS ?= ${REPO_ROOT}/_artifacts
 PLATFORMS ?= linux/amd64 
