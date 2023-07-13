@@ -34,8 +34,9 @@ type NtnxCloud struct {
 	name string
 
 	client      clientset.Interface
-	config      config.Config
+	config    	config.Config
 	manager     *nutanixManager
+	loadBalancer cloudprovider.LoadBalancer
 	instancesV2 cloudprovider.InstancesV2
 }
 
@@ -66,6 +67,7 @@ func newNtnxCloud(configReader io.Reader) (cloudprovider.Interface, error) {
 		name:        constants.ProviderName,
 		config:      nutanixConfig,
 		manager:     nutanixManager,
+		loadBalancer: newLoadBalancers(nutanixManager), 
 		instancesV2: newInstancesV2(nutanixManager),
 	}
 
@@ -78,6 +80,7 @@ func (nc *NtnxCloud) Initialize(clientBuilder cloudprovider.ControllerClientBuil
 ) {
 	klog.Info("Initializing client ...")
 	nc.addKubernetesClient(clientBuilder.ClientOrDie("cloud-provider-nutanix"))
+	
 	klog.Infof("Client initialized")
 }
 
@@ -102,7 +105,8 @@ func (nc *NtnxCloud) HasClusterID() bool {
 }
 
 func (nc *NtnxCloud) LoadBalancer() (cloudprovider.LoadBalancer, bool) {
-	return nc, false
+	klog.Info("called LoadBalancer")
+	return nc.loadBalancer, nc.loadBalancer != nil
 }
 
 func (nc *NtnxCloud) Routes() (cloudprovider.Routes, bool) {

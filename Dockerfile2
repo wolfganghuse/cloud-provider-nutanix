@@ -1,0 +1,7 @@
+FROM scratch
+
+LABEL description="Nutanix Cloud Controller Manager"
+
+COPY bin/nutanix-cloud-controller-manager /bin/nutanix-cloud-controller-manager
+
+ENTRYPOINT [ "/bin/nutanix-cloud-controller-manager" ]

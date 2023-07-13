@@ -26,5 +26,6 @@ go.work
 
 **/cover.out
 bin/
+vendor
 
 _artifacts
