@@ -19,7 +19,6 @@ package provider
 import (
 	"context"
 	"fmt"
-	"github.com/google/uuid"
 
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
@@ -66,32 +65,26 @@ func (l *loadBalancers) EnsureLoadBalancer(ct context.Context,
 ) {
 	klog.Info("EnsureLoadBalancer")
 	klog.Infof("syncing service '%s' (%s)", service.Name, service.UID)
-	
-	// The loadBalancer address has already been populated
-	if service.Spec.LoadBalancerIP != "" {
-		return &service.Status.LoadBalancer, nil
-	} 
 
-	SubnetLabel:=service.Labels["nutanix-subnet"]
-	if SubnetLabel=="" {
-		klog.Infof("Label nutanix-subnet not set, ignoring SVC")
-		return nil, fmt.Errorf("Label nutanix-subnet not set, ignoring SVC")
+	// The loadBalancer address has already been populated
+	if len(service.Spec.ExternalIPs) != 0 {
+		return &service.Status.LoadBalancer, nil
 	}
 
 	l.nutanixManager.nutanixClient.Get()
 
-	nc, err:= connectv4(*l.nutanixManager.nutanixClient.(*nutanixClient))
+	nc, err := connectv4(*l.nutanixManager.nutanixClient.(*nutanixClient))
 
-	SubnetUUID, err:=findSubnetByName(*nc,SubnetLabel)
+	SubnetUUID, err := findSubnetByName(*nc)
 	if err != nil {
 		return nil, err
 	}
-	ClientContext := uuid.NewString()
-	myIP, err:= ReserveIP(*nc,*SubnetUUID.ExtId,ClientContext)
+	ClientContext := fmt.Sprintf("%s:", service.Name)
+	myIP, err := ReserveIP(*nc, *SubnetUUID.ExtId, ClientContext)
 	if err != nil {
 		return nil, err
 	}
-	loadBalancerIP:=*myIP.Ipv4.Value
+	loadBalancerIP := *myIP.Ipv4.Value
 
 	retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		l.nutanixManager.nutanixClient.Get()
@@ -109,10 +102,10 @@ func (l *loadBalancers) EnsureLoadBalancer(ct context.Context,
 		// Set Label for service lookups
 		recentService.Labels["implementation"] = "nutanix-ipam"
 		recentService.Labels["ipam-address"] = loadBalancerIP
-		recentService.Labels["ip-uuid"] = ClientContext
+		// recentService.Labels["ip-uuid"] = ClientContext
 
 		// Set IPAM address to Load Balancer Service
-		recentService.Spec.LoadBalancerIP = loadBalancerIP
+		recentService.Spec.ExternalIPs = append(recentService.Spec.ExternalIPs, loadBalancerIP)
 
 		// Update the actual service with the address and the labels
 		_, updateErr := l.nutanixManager.client.CoreV1().Services(recentService.Namespace).Update(ct, recentService, metav1.UpdateOptions{})
@@ -137,19 +130,18 @@ func (l *loadBalancers) UpdateLoadBalancer(ct context.Context,
 func (l *loadBalancers) EnsureLoadBalancerDeleted(ct context.Context, clusterName string,
 	service *v1.Service,
 ) error {
-	nc, err:= connectv4(*l.nutanixManager.nutanixClient.(*nutanixClient))
+	nc, err := connectv4(*l.nutanixManager.nutanixClient.(*nutanixClient))
 
 	klog.Info("EnsureLoadBalancerDeleted")
-	ClientContext:=service.Labels["ip-uuid"]
+	ClientContext := service.Labels["ip-uuid"]
 	klog.Info("Releasing IP with ClientContext: %s", ClientContext)
 
-	SubnetLabel:=service.Labels["nutanix-subnet"]
-	SubnetUUID, err:=findSubnetByName(*nc,SubnetLabel)
+	SubnetUUID, err := findSubnetByName(*nc)
 	if err != nil {
 		return err
 	}
 
-	err = UnreserveIP(*nc,*SubnetUUID.ExtId,ClientContext)
+	err = UnreserveIP(*nc, *SubnetUUID.ExtId, ClientContext)
 	if err != nil {
 		return err
 	}
