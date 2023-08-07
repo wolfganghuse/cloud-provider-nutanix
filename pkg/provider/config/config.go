@@ -29,6 +29,7 @@ type Config struct {
 	PrismCentral         credentialTypes.NutanixPrismEndpoint `json:"prismCentral"`
 	TopologyDiscovery    TopologyDiscovery                    `json:"topologyDiscovery"`
 	EnableCustomLabeling bool                                 `json:"enableCustomLabeling"`
+	ServiceNetwork       string                               `json:"serviceNetwork"`
 }
 
 type TopologyDiscovery struct {

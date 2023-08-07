@@ -46,7 +46,6 @@ func main() {
 	fss := cliflag.NamedFlagSets{}
 
 	controllerInitializers := app.DefaultInitFuncConstructors
-	delete(controllerInitializers, "service")
 	delete(controllerInitializers, "route")
 
 	command := app.NewCloudControllerManagerCommand(ccmOptions,
