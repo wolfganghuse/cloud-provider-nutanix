@@ -18,11 +18,11 @@ package provider
 
 import (
 	"context"
-	"fmt"
 	"encoding/json"
-	"strings"
-	"strconv"
+	"fmt"
 	"os"
+	"strconv"
+	"strings"
 
 	prismgoclient "github.com/nutanix-cloud-native/prism-go-client"
 	"github.com/nutanix-cloud-native/prism-go-client/environment"
@@ -39,13 +39,13 @@ import (
 	"github.com/nutanix-cloud-native/cloud-provider-nutanix/pkg/provider/config"
 	"github.com/nutanix-cloud-native/cloud-provider-nutanix/pkg/provider/interfaces"
 
-//	b64 "encoding/base64"
+	//	b64 "encoding/base64"
 
-// adding public v4api
+	// adding public v4api
 	apiv4 "github.com/nutanix/ntnx-api-golang-clients/networking-go-client/v4/api"
 	networkingclientv4 "github.com/nutanix/ntnx-api-golang-clients/networking-go-client/v4/client"
 	prismclientv4 "github.com/nutanix/ntnx-api-golang-clients/prism-go-client/v4/client"
-	
+
 	commonv4 "github.com/nutanix/ntnx-api-golang-clients/networking-go-client/v4/models/common/v1/config"
 	networkingconfigv4 "github.com/nutanix/ntnx-api-golang-clients/networking-go-client/v4/models/networking/v4/config"
 	prismv4 "github.com/nutanix/ntnx-api-golang-clients/networking-go-client/v4/models/prism/v4/config"
@@ -57,23 +57,22 @@ const errEnvironmentNotReady = "environment not initialized or ready yet"
 
 type v4config struct {
 	SubnetReserveUnreserveIPAPIClient *apiv4.SubnetReserveUnreserveIpApi
-	TasksAPIClient prismapiv4.TaskApi
-	SubnetIPAPIClient *apiv4.SubnetApi
+	TasksAPIClient                    prismapiv4.TaskApi
+	SubnetIPAPIClient                 *apiv4.SubnetApi
 }
 
 type nutanixClient struct {
-	env             *envTypes.Environment
-	config          config.Config
-	secretInformer  coreinformers.SecretInformer
-	sharedInformers informers.SharedInformerFactory
-  	configMapInformer coreinformers.ConfigMapInformer
-	v4config		v4config
+	env               *envTypes.Environment
+	config            config.Config
+	secretInformer    coreinformers.SecretInformer
+	sharedInformers   informers.SharedInformerFactory
+	configMapInformer coreinformers.ConfigMapInformer
+	v4config          v4config
 }
 
 type reservedIP struct {
-    IP []string      `json:"reserved_ips"`
+	IP []string `json:"reserved_ips"`
 }
-
 
 func (n *nutanixClient) Get() (interfaces.Prism, error) {
 	if err := n.setupEnvironment(); err != nil {
@@ -164,28 +163,27 @@ func (n *nutanixClient) getCCMNamespace() (string, error) {
 	return ns, nil
 }
 
-
 // ReserveIP returns single IP, needs Subnet UUID and ClientContext
 func ReserveIP(n nutanixClient, SubnetUUID string, ClientContext string) (*commonv4.IPAddress, error) {
 	var ClientCount int64 = 1
-	ReservedIP:=commonv4.NewIPAddress()
-	
-	ipReserveInput:=*networkingconfigv4.NewIpReserveInput()
+	ReservedIP := commonv4.NewIPAddress()
+
+	ipReserveInput := *networkingconfigv4.NewIpReserveInput()
 	ipReserveInput.ClientContext = &ClientContext
 	ipReserveInput.Count = &ClientCount
 	ipReserveInput.ReserveType = networkingconfigv4.RESERVETYPE_IP_ADDRESS_COUNT.Ref()
 
-	response, err := n.v4config.SubnetReserveUnreserveIPAPIClient.ReserveIps(&ipReserveInput, &SubnetUUID)   
+	response, err := n.v4config.SubnetReserveUnreserveIPAPIClient.ReserveIps(&ipReserveInput, &SubnetUUID)
 	if err != nil {
-		klog.Errorf("error while SubnetReserveUnreserveIpApiClient.ReserveIps | ipReserveInput: %s, Subnet_UUID: %s| error: %s", ipReserveInput, SubnetUUID,err.Error())
-		return nil , err
-	} 
+		klog.Errorf("error while SubnetReserveUnreserveIpApiClient.ReserveIps | ipReserveInput: %s, Subnet_UUID: %s| error: %s", ipReserveInput, SubnetUUID, err.Error())
+		return nil, err
+	}
 
 	data := response.GetData().(prismv4.TaskReference)
-	responsetask, err:= n.v4config.TasksAPIClient.TaskGet(data.ExtId)
+	responsetask, err := n.v4config.TasksAPIClient.TaskGet(data.ExtId)
 	if err != nil {
 		klog.Errorf("error while TasksApiClient.TaskGet | error: %s", err.Error())
-		return nil , err
+		return nil, err
 	}
 
 	status, err := responsetask.GetData().(prismconfigv4.Task).Status.MarshalJSON()
@@ -193,28 +191,28 @@ func ReserveIP(n nutanixClient, SubnetUUID string, ClientContext string) (*commo
 		return nil, fmt.Errorf(*responsetask.Data.GetValue().(prismconfigv4.Task).LegacyErrorMessage)
 	}
 
-	ReservedIPv4:=commonv4.NewIPv4Address()
-	ipResponse:=reservedIP{}
+	ReservedIPv4 := commonv4.NewIPv4Address()
+	ipResponse := reservedIP{}
 	output := responsetask.GetData().(prismconfigv4.Task)
-	
-	for _ ,details:= range output.CompletionDetails {
-		s:=details.Value.GetValue().(string)
-		json.Unmarshal([]byte(s), &ipResponse)
-		ReservedIPv4.Value=&ipResponse.IP[0]
-	}
-	ReservedIP.Ipv4=ReservedIPv4
 
-	return ReservedIP,nil
+	for _, details := range output.CompletionDetails {
+		s := details.Value.GetValue().(string)
+		json.Unmarshal([]byte(s), &ipResponse)
+		ReservedIPv4.Value = &ipResponse.IP[0]
+	}
+	ReservedIP.Ipv4 = ReservedIPv4
+
+	return ReservedIP, nil
 }
 
 // UnreserveIP returns Err of nil if release was successful, needs Subnet UUID and ClientContext
-func UnreserveIP(n nutanixClient, SubnetUUID string, ClientContext string) (error) {
-	IPUnreserveInput:=networkingconfigv4.NewIpUnreserveInput()
+func UnreserveIP(n nutanixClient, SubnetUUID string, ClientContext string) error {
+	IPUnreserveInput := networkingconfigv4.NewIpUnreserveInput()
 
-	IPUnreserveInput.UnreserveType= networkingconfigv4.UNRESERVETYPE_CONTEXT.Ref()
-	IPUnreserveInput.ClientContext=&ClientContext
+	IPUnreserveInput.UnreserveType = networkingconfigv4.UNRESERVETYPE_CONTEXT.Ref()
+	IPUnreserveInput.ClientContext = &ClientContext
 
-	response, err := n.v4config.SubnetReserveUnreserveIPAPIClient.UnreserveIps(IPUnreserveInput,&SubnetUUID)
+	response, err := n.v4config.SubnetReserveUnreserveIPAPIClient.UnreserveIps(IPUnreserveInput, &SubnetUUID)
 	if err != nil {
 		return err
 	}
@@ -231,7 +229,6 @@ func UnreserveIP(n nutanixClient, SubnetUUID string, ClientContext string) (erro
 	return nil
 }
 
-
 func connectv4(n nutanixClient) (*nutanixClient, error) {
 	if err := n.setupEnvironment(); err != nil {
 		return nil, fmt.Errorf("%s: %v", errEnvironmentNotReady, err)
@@ -244,19 +241,19 @@ func connectv4(n nutanixClient) (*nutanixClient, error) {
 
 	// we need to split the configured host into hostname and port
 	urlparts := strings.Split(me.Address.Host, ":")
-	Port, err:= strconv.Atoi(urlparts[1])
+	Port, err := strconv.Atoi(urlparts[1])
 	if err != nil {
 		return nil, err
-	} 
-	Host:= urlparts[0]
-	
+	}
+	Host := urlparts[0]
+
 	APIClientInstance := networkingclientv4.NewApiClient()
 	APIClientInstance.Host = Host // IPv4/IPv6 address or FQDN of the cluster
-	
-	APIClientInstance.Port = Port // Port to which to connect to
+
+	APIClientInstance.Port = Port                           // Port to which to connect to
 	APIClientInstance.Username = me.ApiCredentials.Username // UserName to connect to the cluster
 	APIClientInstance.Password = me.ApiCredentials.Password // Password to connect to the cluster
-	
+
 	// not sure if there is a switch for Debug
 	//if me.Debug == "true" {
 	APIClientInstance.Debug = false
@@ -270,8 +267,8 @@ func connectv4(n nutanixClient) (*nutanixClient, error) {
 	//}
 
 	PrismAPIClientInstance := prismclientv4.NewApiClient()
-	PrismAPIClientInstance.Host = Host // IPv4/IPv6 address or FQDN of the cluster
-	PrismAPIClientInstance.Port = Port // Port to which to connect to
+	PrismAPIClientInstance.Host = Host                           // IPv4/IPv6 address or FQDN of the cluster
+	PrismAPIClientInstance.Port = Port                           // Port to which to connect to
 	PrismAPIClientInstance.Username = me.ApiCredentials.Username // UserName to connect to the cluster
 	PrismAPIClientInstance.Password = me.ApiCredentials.Password // Password to connect to the cluster
 
@@ -292,31 +289,32 @@ func connectv4(n nutanixClient) (*nutanixClient, error) {
 	return &n, nil
 }
 
-//findSubnetByName returns Subnet UUID, needs name
-func findSubnetByName(n nutanixClient, name string) (*networkingconfigv4.Subnet, error) {
+// findSubnetByName returns Subnet UUID, needs name
+func findSubnetByName(n nutanixClient) (*networkingconfigv4.Subnet, error) {
 	page := 0
 	limit := 20
+	name := n.config.ServiceNetwork
 	filter := fmt.Sprintf("name eq '%[1]v'", name)
 	response, err := n.v4config.SubnetIPAPIClient.ListSubnets(
 		&page, &limit, &filter, nil)
 	if err != nil {
-		return nil , err
+		return nil, err
 	}
 
 	if *response.Metadata.TotalAvailableResults > 1 {
 		return nil, fmt.Errorf("your query returned more than one result. Please use subnet_uuid argument or use additional filters instead")
 	}
 
-	if *response.Metadata.TotalAvailableResults == 0{
+	if *response.Metadata.TotalAvailableResults == 0 {
 		return nil, fmt.Errorf("subnet with the given name, not found")
 	}
 
 	if response.GetData() == nil {
 		return nil, fmt.Errorf("subnet query call failed")
 	}
-	found:=networkingconfigv4.NewSubnet()
+	found := networkingconfigv4.NewSubnet()
 	for _, data := range response.GetData().([]networkingconfigv4.Subnet) {
-		found=&data
+		found = &data
 	}
 	return found, nil
 }
